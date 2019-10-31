@@ -1,0 +1,275 @@
+var cron = require('node-cron'); 
+var pushNotification = require('./push-notification'); 
+var config = require('config'); 
+var async = require('async'); 
+ 
+var UserManagedShop = require('../models/user-managed-shop'); 
+var responseMessages = require('../lib/response-messages'); 
+var BookingRequest = require('../models/booking-request'); 
+var Shop = require('../models/shop'); 
+var responseMessages = require('../lib/response-messages'); 
+var util = require('../lib/util'); 
+let Logger = require('./logger').Logger; 
+var ObjectId = require('mongoose').Types.ObjectId;  
+ 
+ 
+ 
+ 
+var PushNotificationRequest = require('../models/push-notification-request'); 
+var VehicleRecommendation = require('../models/vehicle-recommendation'); 
+ 
+cron.schedule(config.get('pushNotificationDispathCronSchedule'), function() { 
+    pushNotification.pushNotificationDispatcher(); 
+}); 
+ 
+var cronRunning = false; 
+cron.schedule(config.get('pushNotificationDispathCronSchedule'), function() { 
+        var logger = new Logger(); 
+        logger.writeLog('appointment reminder cron'); 
+ 
+//      if(!cronRunning){ 
+        new Promise((resolve, reject) => { 
+            BookingRequest.find({ $or : [ {isDayPriorNotified : 0} ,  {isWeekPriorNotified : 0}  ]}, (error, results) => { 
+                resolve(results); 
+            }) 
+        }).then(bookingRequests => { 
+            bookingRequests.forEach(booking => { 
+                if(booking.isDayPriorNotified != BookingRequest.IS_NOTIFIED_YES &&  Math.round((booking.bookingDateTime-(new Date()))/36e5) <= 24 && (booking.manager_status == 1 && (booking.car_owner_status == 0 || booking.car_owner_status == 1)  ) ){ 
+                    // let pnRequestPayload = { 
+                    //  createdById: booking.userId.id ,                         
+                    //  users: [booking.userId.id], 
+                    //  shopId: booking.shopId, 
+                    //  type: PushNotificationRequest.BOOKING_CANCEL, 
+                    //  booking_id : booking._id 
+                    // }; 
+                    try{ 
+                    let pnRequestPayload = { 
+                        createdById: booking.userId, 
+                        title: 'Appointment reminder', 
+                        text: "You have an appointment tomorrow", 
+                        users: [new ObjectId(booking.userId)], 
+                        type: 4, 
+                        shopId: booking.shopId, 
+                        booking_id : booking._id, 
+                        status: 0 
+                    }; 
+ 
+                    console.log('------------------->') 
+                    PushNotificationRequest.create(pnRequestPayload, function (err, pushNotificationRequest) { 
+                        if (!err) { 
+                            console.log('day notification request created - ' + pnRequestPayload.text); 
+                            BookingRequest.update({_id : booking.id} , { isDayPriorNotified : BookingRequest.IS_NOTIFIED_YES,  isWeekPriorNotified : BookingRequest.IS_NOTIFIED_YES }, function(err, res) { 
+                                if (!err) { 
+                                    logger.writeLog('Booking request day prior status updated.'); 
+                                } else { 
+                                    console.log('update failed.'); 
+                                    console.log(err); 
+                                } 
+                            }) 
+                             
+                        } else { 
+                            console.log(err); 
+                            logger.writeLog(err); 
+                        } 
+                    }); 
+                    }catch (ex) { 
+                        console.log(ex); 
+                    } 
+                } 
+                 
+                 if (booking.isWeekPriorNotified != BookingRequest.IS_NOTIFIED_YES && Math.round((booking.bookingDateTime-(new Date()))/36e5) >= 24*7  && Math.round((booking.bookingDateTime-(new Date()))/36e5) <= (24*7+1) && (booking.manager_status == 1 && (booking.car_owner_status == 0 || booking.car_owner_status == 1))){ 
+                    try{ 
+                        let pnRequestPayload = { 
+                            createdById: booking.userId, 
+                            title: 'Appointment reminder', 
+                            text: "You have an appointment in a week", 
+                            users: [new ObjectId(booking.userId)], 
+                            type: 5, 
+                            shopId: booking.shopId, 
+                            booking_id : booking._id, 
+                            status: 0 
+                        }; 
+ 
+                    console.log('------------------->') 
+                    PushNotificationRequest.create(pnRequestPayload, function (err, pushNotificationRequest) { 
+                        if (!err) { 
+                            console.log('weekly notification request created - ' + pnRequestPayload.text); 
+                            BookingRequest.update({_id : booking.id} , { isWeekPriorNotified : BookingRequest.IS_NOTIFIED_YES }, function(err, res) { 
+                                if (!err) { 
+                                    console.log('Appointment request week prior status updated.'); 
+                                } else { 
+                                    console.log('update failed.'); 
+                                    console.log(err); 
+                                } 
+                            }) 
+                             
+                            logger.writeLog('Created Push notification request for chat message'); 
+                        } else { 
+                            console.log(err); 
+                            logger.writeLog('Faield to create Push notification request for chat message'); 
+                        } 
+                    }); 
+                }catch (ex){ 
+                    console.log(ex); 
+                } 
+                } 
+            }); 
+        }); 
+//      } 
+        cronRunning = true; 
+}); 
+ 
+/* 
+cron.schedule(config.get('pushNotificationDispathCronSchedule'), function() { 
+        let req = {}; 
+        req.body = {}; 
+        req.query = {}; 
+        req.body.createdById = 'system-user-id'; 
+        req.body.updatedById = null; 
+        req.body.title = "15 notification title" 
+     
+        var logger = new Logger(); 
+        logger.writeLog('appointment reminder cron'); 
+     
+            var query, 
+                pageNo = req.query.pageNo ? req.query.pageNo : 1, 
+                limit = req.query.limit ? req.query.limit : 10, 
+                sort = { createdAt: -1 }, 
+                ids = []; 
+            if (req.query.sort) { 
+                let sortOrder = req.query.sort.charAt(0) == '-' ? '-1' : 1; 
+                let sortField = _.trim(req.query.sort, '-'); 
+                sort = { [sortField]: sortOrder }; 
+            } 
+     
+            var updateNotifiedStatus = false; 
+            async.waterfall([ 
+                function (callback) { 
+                        // Area manager has permission to access vehicle records belongs to shop managed by him 
+                        UserManagedShop.getShopIdsByManagedUserId("5c35bd6d8ec8a6002ed9907b", function (err, managedShopIds) { 
+                            if (err) { 
+                                console.log(responseMessages.FAIL); 
+                            } 
+                            for (let i = 0; i < managedShopIds.length; i++) { 
+                                ids.push(managedShopIds[i].shopId); 
+                            } 
+                            req.query.shopIds = ids; 
+                            return callback(err); 
+                        }); 
+                }, function (callback) { 
+                        // Shop owner has permission to access vechile records belongs to his shop 
+                        updateNotifiedStatus = true; 
+                        Shop.getIdsByShopOwner("5c35bd6d8ec8a6002ed9907b", function (err, shopIds) { 
+                            if (err) { 
+                                console.log(mongooseErrorExtractor.getErrorData(err)); 
+                            } 
+                            for (let i = 0; i < shopIds.length; i++) { 
+                                if (ids.indexOf(shopIds[i].id) < 0) { 
+                                    ids.push(shopIds[i].id); 
+                                } 
+                            } 
+                            req.query.shopIds = ids; 
+                            return callback(err); 
+                        }); 
+                } 
+            ], function () { 
+                query = BookingRequest.getSearchQuery(req.query); 
+                query.$or = [{isDayPriorNotified:0} ,{ isWeekPriorNotified: 0}]; 
+                // Get record count associated with this query 
+                BookingRequest.getCount(query, function (err, count) { 
+                    if (err) { 
+                        console.log('Error getting booking request count: ' + err); 
+                    } else { 
+                        BookingRequest.getAll(query, pageNo, limit, sort, function (err, bookingRequests) { 
+                            if (!err) { 
+                                let data = []; 
+                                var ids = []; 
+                                for (let i = 0; i < bookingRequests.length; i++) { 
+                                    let booking = responseMessages.bookingRequest(bookingRequests[i]); 
+                                    data.push(booking); 
+                                    ids.push(bookingRequests[i]._id); 
+                                } 
+ 
+                                if(data){ 
+                                    bookingRequests.forEach(booking => { 
+ 
+                                        if(booking.isDayPriorNotified != BookingRequest.IS_NOTIFIED_YES &&  Math.round((booking.bookingDateTime-(new Date()))/36e5) <= 24){ 
+                                            let pnRequestPayload = { 
+                                                createdById: booking.userId.id , 
+                                                title: 'Appointment', 
+                                                text: "You have an appointment tomorrow", 
+                                                users: [booking.userId.id], 
+                                                shopId: booking.shopId, 
+                                                type: PushNotificationRequest.BOOKING, 
+                                                booking_id : booking._id 
+                                            }; 
+ 
+                                            console.log('------------------->') 
+                                            PushNotificationRequest.create(pnRequestPayload, function (err, pushNotificationRequest) { 
+                                                if (!err) { 
+                                                    console.log('day notification request created - ' + pnRequestPayload.text); 
+                                                    BookingRequest.update({_id : booking.id} , { isDayPriorNotified : BookingRequest.IS_NOTIFIED_YES,  isWeekPriorNotified : BookingRequest.IS_NOTIFIED_YES }, function(err, res) { 
+                                                        if (!err) { 
+                                                            console.log('Booking request day prior status updated.'); 
+                                                            logger.writeLog('Booking request day prior status updated.'); 
+                                                        } else { 
+                                                            console.log('update failed.'); 
+                                                            console.log(err); 
+                                                        } 
+                                                    }) 
+                                                     
+                                                } else { 
+                                                    console.log(err); 
+                                                    logger.writeLog(err); 
+                                                } 
+                                            }); 
+                                        } 
+                                         if (booking.isWeekPriorNotified != BookingRequest.IS_NOTIFIED_YES && Math.round((booking.bookingDateTime-(new Date()))/36e5) >= 24*7  && Math.round((booking.bookingDateTime-(new Date()))/36e5) <= (24*7+1)){ 
+                                            let pnRequestPayload = { 
+                                                createdById: booking.userId.id , 
+                                                title: 'Appointment', 
+                                                text: "You have an appointment in a week", 
+                                                users: [booking.userId.id], 
+                                                shopId: booking.shopId, 
+                                                type: PushNotificationRequest.CHAT 
+                                            }; 
+ 
+                                            console.log('------------------->') 
+                                            PushNotificationRequest.create(pnRequestPayload, function (err, pushNotificationRequest) { 
+                                                if (!err) { 
+                                                    console.log('weekly notification request created - ' + pnRequestPayload.text); 
+                                                    BookingRequest.update({_id : booking.id} , { isWeekPriorNotified : BookingRequest.IS_NOTIFIED_YES }, function(err, res) { 
+                                                        if (!err) { 
+                                                            console.log('Booking request week prior status updated.'); 
+                                                        } else { 
+                                                            console.log('update failed.'); 
+                                                            console.log(err); 
+                                                        } 
+                                                    }) 
+                                                     
+                                                    logger.writeLog('Created Push notification request for chat message'); 
+                                                } else { 
+                                                    console.log(err); 
+                                                    logger.writeLog('Faield to create Push notification request for chat message'); 
+                                                } 
+                                            }); 
+                                        } 
+                                    }); 
+ 
+                                    // notified = data.filter(c => c.isDayPriorNotified != BookingRequest.IS_NOTIFIED_YES ); 
+                                    // if(notified && notified.length > 0){ 
+                                    //  BookingRequest.updateAll({_id: {$in:ids}}, {isDayPriorNotified: BookingRequest.IS_NOTIFIED_YES}, ); 
+                                    // } 
+                                } 
+                                //console.log(bookingRequests); 
+                            } else { 
+                                console.log('Failed to retrieve booking request records: ' + JSON.stringify(err)); 
+                            } 
+                        }); 
+                    } 
+                }); 
+            }); 
+}); 
+ 
+*/ 
+

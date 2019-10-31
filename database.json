@@ -1,0 +1,27 @@
+{ 
+    "defaultEnv": "dev", 
+    "dev": { 
+        "driver": "mongodb", 
+        "database": "nas", 
+        "username": "nas", 
+        "pwd": "nas2#1", 
+        "host": "localhost", 
+        "port": 27017 
+    }, 
+    "staging": { 
+        "driver": "mongodb", 
+        "database": "nas", 
+        "username": "nas", 
+        "pwd": "nas2#1", 
+        "host": "localhost", 
+        "port": 27000 
+    }, 
+    "uat": { 
+        "driver": "mongodb", 
+        "database": "nas", 
+        "username": "nas", 
+        "pwd": "nas2#1", 
+        "host": "localhost", 
+        "port": 27000 
+    } 
+} 

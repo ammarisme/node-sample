@@ -1,0 +1,26 @@
+var mongoose = require('mongoose'); 
+ 
+// ES6 promises 
+mongoose.Promise = Promise; 
+ 
+var options = { 
+  useMongoClient: true, 
+  promiseLibrary: global.Promise 
+  }; 
+ 
+// mongodb connection 
+// mongodb://nas:nas2#1@localhost:27017/nas 
+mongoose.connect(process.env.MONGO_URL || "mongodb://mongoadminqa:AiyooSalli@mongoqa.autorepairapp.io:27000/stagedb", ); 
+// mongoose.connect("mongodb://localhost:27017/shopflow", ); 
+ 
+ 
+var db = mongoose.connection; 
+ 
+// mongodb error 
+db.on('error', console.error.bind(console, 'connection error:')); 
+ 
+// mongodb connection open 
+db.once('openUri', () => { 
+  console.log(`Connected to Mongo at: ${new Date()}`) 
+  console.log(process.env.MONGO_URL); 
+}); 

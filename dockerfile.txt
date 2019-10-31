@@ -1,0 +1,10 @@
+From node:carbon 
+ 
+WORKDIR /api 
+COPY . . 
+RUN npm install --prodution 
+RUN apt-get install -y tzdata 
+ENV TZ=UTC 
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime  
+EXPOSE 8080 
+CMD ["npm", "run", "prodstart"] 
